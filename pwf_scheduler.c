@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <sys/time.h>
-#include <getopt.h>
 
 #define STACK_SIZE 4096
 #define MAX_THREADS 5
@@ -61,7 +60,7 @@ int t5_bursts[6];
 int t6_bursts[6];
 int t7_bursts[6];
 
-// Helper counter function, n: cpu burst time, i: thread number
+// Counter function that we make context for each thread, n: cpu burst time, i: thread number
 void counterFunction(int n, int i) {
     int j;
     for (j = n - 1; j >= 0; j--) {
@@ -76,21 +75,25 @@ void counterFunction(int n, int i) {
 }
 
 void printerFunction() {
-    
+    char running[4];
+    char ready[20];
+    char finished[20];
+    char IO[20];
+    int i;
+    for (i = 0; i < MAX_THREADS; i++) {
+        if (threadArray[i].state == RUNNING) {
+            running[0] = 'T';
+            running[1] = atoi(threadArray[i].index);
+            // running[2] = 
+        }
+    }
+
+    printf("running>%s ready>%s finished>%s IO>%s", running, ready, finished, IO);
 }
 
-// **************************************************************
-//                     THREAD FUNCTIONS
-// **************************************************************
-
+// Initializes all global data structures for the thread.
 void initializeThread() {
-    // Initializing the context for main() function, since the first element
-    // of the threadArray is reserved for the context of the main() function.
-    getcontext(&threadArray[0].context);
-    threadArray[0].context.uc_link = &mainContext;
-    threadArray[0].state = RUNNING;
-
-    // Starting from index 1 since first element is reserved for main().
+    // Starting from index 1 since the first element of threadArray is reserved for main().
     for (int i = 1; i < MAX_THREADS; i++) {
         getcontext(&threadArray[i].context);
         threadArray[i].context.uc_stack.ss_sp = malloc(STACK_SIZE);
@@ -102,13 +105,11 @@ void initializeThread() {
 }
 
 // The explanation of the parameters:
-// void (*func)(void *)  :  func is a pointer to a function, in my case, it is
-//                          going to be counterFunction for each created thread
-//                          since every thread is going to do what it does.
+// void (*func)(void *)  :  func is a pointer to a function, in my case, it is going to be
+//                          counterFunction for each created thread.
 // 
-// void *arg1, *arg2     :  This is a void pointer which can point to a variable
-//                          of any type. This is a way to pass the necessary
-//                          arguments to the counterFunction (n and i).
+// void *arg1, *arg2     :  This is a void pointer which can point to a variable of any type.
+//                          This is a way to pass the necessary arguments to the counterFunction.
 int createThread(void (*func)(void *), void *arg1, void *arg2) {
     int i;
     for (i = 0; i < MAX_THREADS; i++) {
@@ -141,18 +142,12 @@ void exitThread(int id) {
     threadArray[id].state = EMPTY;
 }
 
-// **************************************************************
-//                       SCHEDULER
-// **************************************************************
-
-// 1. Implementation of Preemptive and Weighted Fair scheduler.
-
 // Note that for this scheduling, I will use "Round Robin" scheduling,
 // and not lottery scheduling as it seems to be our choice.
+
+// Implementation of Preemptive and Weighted Fair scheduler with Round Robin Algorithm.
 void PWF_scheduler() {
-    printf("Preemptive and Weighted Fair with Round Robin Scheduling...\n");
-    // Since I choose to use Round Robin algorithm, weights are equal so
-    // I do not need to take the weights into account.
+    // Since I choose to use Round Robin algorithm, weights are equal so...
     while (1) {
         int i;
         for (i = 0; i < MAX_THREADS; i++) {
@@ -168,10 +163,7 @@ void PWF_scheduler() {
     }
 }
 
-// **************************************************************
-//                          MAIN
-// **************************************************************
-
+// In this program, we only parse the arguments and create user-level threads in main().
 int main (int argc, char *argv[]) {
     printf("EE442 Programming Assignment 2 Salih Mert Kucukakinci 2094290\n");
     printf("Usage: ./pwf_scheduler **arguments\n");
@@ -180,17 +172,12 @@ int main (int argc, char *argv[]) {
     printf("3 bursts of cpu and 3 bursts of io will have the same duration for each process.\n");
 
     if (argc == 1) {
-        printf("You did not enter any arguments.\n");
-        printf("Trying to find an input file.\n");
+        printf("You did not enter any arguments. Trying to find an input file.\n");
         
         char *filename = "input.txt";
         FILE *file = fopen(filename, "r");
         if (file == NULL) {
             printf("Error: Could not open file %s\n", filename);
-            printf("Usage: ./pwf_scheduler **arguments\n");
-            printf("If you do not enter any arguments, the program will try to find an input file.\n");
-            printf("If you enter 14 arguments (t1_cpu t2_cpu ... t7_cpu t1_io t2_io ... t7_io), then\n");
-            printf("3 bursts of cpu and 3 bursts of io will have the same duration for each process.\n");
             return 1;
         }
         else {
@@ -252,7 +239,7 @@ int main (int argc, char *argv[]) {
                         }
                         break;
                     default:
-                        printf("Unexpected error.\n");
+                        printf("ERROR: An unexpected error has occurred.\n");
                         return 1;
                 }
             }
@@ -286,15 +273,17 @@ int main (int argc, char *argv[]) {
         }
     }
     else {
-        printf("Invalid arguments specified.\n");
-        printf("Usage: ./pwf_scheduler **arguments\n");
-        printf("If you do not enter any arguments, the program will try to find an input file.\n");
-        printf("If you enter 14 arguments (t1_cpu t2_cpu ... t7_cpu t1_io t2_io ... t7_io), then\n");
-        printf("3 bursts of cpu and 3 bursts of io will have the same duration for each process.\n");
+        printf("ERROR: Invalid arguments specified.\n");
         return 1;
     }
 
     printf("%d\n", t2_bursts[2]);
 
+    initializeThread();
+    signal(SIGALRM, runThread);
+    alarm(SWITCH_INTERVAL);
+    getcontext(&threadArray[0].context);
 
+    while (1);
+    return 0;
 }
