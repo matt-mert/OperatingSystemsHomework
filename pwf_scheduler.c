@@ -6,7 +6,10 @@
 #include <ucontext.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include <signal.h>
+#include <unistd.h>
 #include <sys/time.h>
 
 #define STACK_SIZE 4096
@@ -38,29 +41,55 @@ typedef struct {
     ucontext_t context;
     ThreadState state;
     CurrentBurst current;
-    int index;
-    int all_bursts[6]; // First 3 are cpu and last 3 are io
+    unsigned int threadIndex;
+    unsigned int arrayIndex;
+    int bursts[6]; // The first 3 are cpu and the last 3 are io
 } ThreadInfo;
 
 // Here is our threadArray which is a global variable.
 ThreadInfo threadArray[MAX_THREADS];
 
-// To store the context of the main() function.
-ucontext_t mainContext;
-
-// Index of currently running thread which is a global variable.
+// Some information about the threads which are global variables.
 volatile int currentThread = 0;
 volatile int createdThreads = 0;
+volatile int finishedThreads = 0;
 
-int t1_bursts[6];
-int t2_bursts[6];
-int t3_bursts[6];
-int t4_bursts[6];
-int t5_bursts[6];
-int t6_bursts[6];
-int t7_bursts[6];
+// Container to put the input data.
+int inputArray[42];
 
-// Counter function that we make context for each thread, n: cpu burst time, i: thread number
+// Ready Queue for the Round Robin Algorithm
+int readyQueue[4];
+
+// This function is the function we makecontext for each thread.
+void threadFunction(void *arg1, void *arg2) {
+    unsigned int threadIndex = (uintptr_t) arg1;
+    unsigned int arrayIndex = (uintptr_t) arg2;
+    while (1) {
+        if (threadArray[arrayIndex].state == RUNNING) {
+            CurrentBurst burst = threadArray[arrayIndex].current;
+            switch (burst)
+            {
+            case CPU1:
+                break;
+            case CPU2:
+                break;
+            case CPU3:
+                break;
+            case IO1:
+                break;
+            case IO2:
+                break;
+            case IO3:
+                break;
+            default:
+                break;
+            }
+        }
+    }
+    // counterFunction cagirinca 1 sn delay geliyor
+}
+
+// n: cpu burst time, i: thread number
 void counterFunction(int n, int i) {
     int j;
     for (j = n - 1; j >= 0; j--) {
@@ -70,84 +99,153 @@ void counterFunction(int n, int i) {
             printf("\t");
         }
         printf("%d\n", j);
-        // sleep(1);
+        usleep(999000); // Sleep for 0.999 seconds
     }
 }
 
-void printerFunction() {
-    char running[4];
-    char ready[20];
-    char finished[20];
-    char IO[20];
+// Pops the first element of ready queue. (Helper Function)
+int popFront() {
+    int temp1 = readyQueue[0];
+    int temp2 = readyQueue[1];
+    int temp3 = readyQueue[2];
+    int temp4 = readyQueue[3];
+    readyQueue[0] = temp2;
+    readyQueue[1] = temp3;
+    readyQueue[2] = temp4;
+    readyQueue[3] = -1;
+    return temp1;
+}
+
+// Pushes a new element to the back of ready queue. (Helper Function)
+int pushBack(int val) {
     int i;
-    for (i = 0; i < MAX_THREADS; i++) {
+    for (i = 0; i < 4; i++) {
+        if (readyQueue[i] == -1) {
+            readyQueue[i] = val;
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Helper function to print the information regarding the current status of the threads.
+void printerFunction() {
+    char running[13];
+    char ready[13];
+    char finished[13];
+    char io[13];
+
+    int i;
+    for (i = 0; i < 12; i++) {
+        running[i] = ' ';
+        ready[i] = ' ';
+        finished[i] = ' ';
+        io[i] = ' ';
+    }
+
+    running[12] = '\0';
+    ready[12] = '\0';
+    finished[12] = '\0';
+    io[12] = '\0';
+
+    int runningCount = 0;
+    int readyCount = 0;
+    int finishedCount = 0;
+    int ioCount = 0;
+    for (i = 1; i < MAX_THREADS; i++) {
         if (threadArray[i].state == RUNNING) {
-            running[0] = 'T';
-            running[1] = atoi(threadArray[i].index);
-            // running[2] = 
+            running[runningCount * 3] = 'T';
+            running[runningCount * 3 + 1] = threadArray[i].threadIndex + '0';
+            runningCount++;
+        }
+        else if (threadArray[i].state == READY) {
+            ready[readyCount * 3] = 'T';
+            ready[readyCount * 3 + 1] = threadArray[i].threadIndex + '0';
+            readyCount++;
+        }
+        else if (threadArray[i].state == FINISHED) {
+            finished[finishedCount * 3] = 'T';
+            finished[finishedCount * 3 + 1] = threadArray[i].threadIndex + '0';
+            finishedCount++;
+        }
+        else if (threadArray[i].state == IO) {
+            io[ioCount * 3] = 'T';
+            io[ioCount * 3 + 1] = threadArray[i].threadIndex + '0';
+            ioCount++;
         }
     }
 
-    printf("running>%s ready>%s finished>%s IO>%s", running, ready, finished, IO);
+    printf("running>%s ready>%s finished>%s IO>%s\n", running, ready, finished, io);
 }
 
 // Initializes all global data structures for the thread.
 void initializeThread() {
     // Starting from index 1 since the first element of threadArray is reserved for main().
     for (int i = 1; i < MAX_THREADS; i++) {
-        getcontext(&threadArray[i].context);
-        threadArray[i].context.uc_stack.ss_sp = malloc(STACK_SIZE);
-        threadArray[i].context.uc_stack.ss_size = STACK_SIZE;
-        threadArray[i].context.uc_link = &mainContext;
         threadArray[i].state = EMPTY;
     }
-    getcontext(&mainContext);
 }
 
-// The explanation of the parameters:
-// void (*func)(void *)  :  func is a pointer to a function, in my case, it is going to be
-//                          counterFunction for each created thread.
-// 
-// void *arg1, *arg2     :  This is a void pointer which can point to a variable of any type.
-//                          This is a way to pass the necessary arguments to the counterFunction.
-int createThread(void (*func)(void *), void *arg1, void *arg2) {
+// Creates a thread with makecontext if it can find an EMPTY spot in threadArray.
+int createThread(void (*func)(void *, void *), void *arg) {
     int i;
-    for (i = 0; i < MAX_THREADS; i++) {
+    for (i = 1; i < MAX_THREADS; i++) {
         if (threadArray[i].state == EMPTY) {
             getcontext(&threadArray[i].context);
             threadArray[i].context.uc_stack.ss_sp = malloc(STACK_SIZE);
             threadArray[i].context.uc_stack.ss_size = STACK_SIZE;
-            threadArray[i].context.uc_link = &mainContext;
-            makecontext(&threadArray[i].context, (void (*)(void))func, 1, arg1, arg2);
+            threadArray[i].context.uc_link = &threadArray[0].context;
+            makecontext(&threadArray[i].context, (void (*)(void))func, 1, arg, i);
             threadArray[i].state = READY;
+            threadArray[i].current = CPU1;
+            threadArray[i].threadIndex = (uintptr_t) arg;
+            threadArray[i].arrayIndex = i;
+            createdThreads++;
             break;
         }
     }
     
+    // System is unable to create a new thread so it prints an error message and returns -1.
     if (i == MAX_THREADS) {
-        printf("Cannot create more threads\n");
+        printf("ERROR: Cannot create more threads.\n");
         return -1;
     }
 
     return i;
 }
 
-void runThread(int id) {
-    threadArray[id].state = RUNNING;
-    swapcontext(&mainContext, &threadArray[id].context);
+// Gets called every SWITCH_INTERVAL seconds until all 7 processes are finished.
+void runThread() {
+
+    // Setting alarm for re-running runThread if not all threads are finished.
+    if (finishedThreads < 7) {
+        signal(SIGALRM, runThread);
+        alarm(SWITCH_INTERVAL);
+    }
+    else {
+        return;
+    }
+
+    printerFunction();
+
+    // Scheduler cagirilcak
+
+    // threadArray[id].state = RUNNING;
+    // swapcontext(&mainContext, &threadArray[id].context);
 }
 
-void exitThread(int id) {
-    free(threadArray[id].context.uc_stack.ss_sp);
-    threadArray[id].state = EMPTY;
+// Exits the thread so frees the allocated memory for the thread with given index.
+void exitThread(int index) {
+    free(threadArray[index].context.uc_stack.ss_sp);
 }
 
-// Note that for this scheduling, I will use "Round Robin" scheduling,
-// and not lottery scheduling as it seems to be our choice.
+// *******************************************************************************
+// Note that for this scheduling, I will use "Round Robin" scheduling algorithm
+// and not lottery as it was given as a choice in the homework pdf.
+// *******************************************************************************
 
 // Implementation of Preemptive and Weighted Fair scheduler with Round Robin Algorithm.
-void PWF_scheduler() {
-    // Since I choose to use Round Robin algorithm, weights are equal so...
+void pwf_scheduler() {
     while (1) {
         int i;
         for (i = 0; i < MAX_THREADS; i++) {
@@ -161,20 +259,19 @@ void PWF_scheduler() {
         }
         // sleep(3);
     }
+
+    // int nextIndex = popFront();
 }
 
 // In this program, we only parse the arguments and create user-level threads in main().
 int main (int argc, char *argv[]) {
-    printf("EE442 Programming Assignment 2 Salih Mert Kucukakinci 2094290\n");
-    printf("Usage: ./pwf_scheduler **arguments\n");
-    printf("If you do not enter any arguments, the program will try to find an input file.\n");
-    printf("If you enter 14 arguments (t1_cpu t2_cpu ... t7_cpu t1_io t2_io ... t7_io), then\n");
-    printf("3 bursts of cpu and 3 bursts of io will have the same duration for each process.\n");
+    printf("EE442 Programming Assignment 2 Salih Mert Kucukakinci 2094290\n\n");
+    printf("Usage: ./pwf_scheduler /path/to/your/input.txt\n");
 
-    if (argc == 1) {
-        printf("You did not enter any arguments. Trying to find an input file.\n");
-        
-        char *filename = "input.txt";
+    // PARSING ARGUMENTS STARTED...
+
+    if (argc == 2) {
+        char *filename = argv[1];
         FILE *file = fopen(filename, "r");
         if (file == NULL) {
             printf("Error: Could not open file %s\n", filename);
@@ -194,82 +291,27 @@ int main (int argc, char *argv[]) {
                 T5 2 8 3 2 3 1
                 T6 3 5 5 7 1 1
                 T7 3 2 3 1 1 1
+                X
 
             In this format, first string is label, the next 3 integers are cpu1, cpu2, cpu3 durations
-            and the last 3 integers are io1, io2, io3 durations for the corresponding process. */
+            and the last 3 integers are io1, io2, io3 durations for the corresponding process and
+            X stops reading. */
             
             int i;
             for (i = 0; i < MAX_LENGTH; i++) {
                 fscanf(file, "%3s %d %d %d %d %d %d", label, &buffer[0], &buffer[1], &buffer[2], &buffer[3], &buffer[4], &buffer[5]);
-                int i;
-                switch (label[1]) {
-                    case '1':
-                        for (i = 0; i < 3; i++) {
-                            t1_bursts[i] = buffer[i];
-                        }
-                        break;
-                    case '2':
-                        for (i = 0; i < 3; i++) {
-                            t2_bursts[i] = buffer[i];
-                        }
-                        break;
-                    case '3':
-                        for (i = 0; i < 3; i++) {
-                            t3_bursts[i] = buffer[i];
-                        }
-                        break;
-                    case '4':
-                        for (i = 0; i < 3; i++) {
-                            t4_bursts[i] = buffer[i];
-                        }
-                        break;
-                    case '5':
-                        for (i = 0; i < 3; i++) {
-                            t5_bursts[i] = buffer[i];
-                        }
-                        break;
-                    case '6':
-                        for (i = 0; i < 3; i++) {
-                            t6_bursts[i] = buffer[i];
-                        }
-                        break;
-                    case '7':
-                        for (i = 0; i < 3; i++) {
-                            t7_bursts[i] = buffer[i];
-                        }
-                        break;
-                    default:
-                        printf("ERROR: An unexpected error has occurred.\n");
-                        return 1;
+                if (label[0] == 'X') {
+                    break;
+                }
+                int t = label[1] - '0';
+                int j;
+                for (j = 0; j < 6; j++) {
+                    inputArray[6 * (t - 1) + j] = buffer[j];
                 }
             }
-        }
-    }
-    else if (argc == 15) {
-        printf("You entered 14 arguments.\n");
-        printf("Using the arguments as t1_cpu, t2_cpu, ..., t7_cpu, t1_io, t2_io, ..., t7_io.\n");
-        printf("Note that each of the 3 cpu bursts of t1 will have t1_cpu duration and so on.\n");
-        printf("Similarly, each of the 3 io bursts of t1 will have t1_io duration and so on.\n");
 
-        int i;
-        for (i = 0; i < 3; i++) {
-            // CPU bursts...
-            t1_bursts[i] = atoi(argv[1]);
-            t2_bursts[i] = atoi(argv[2]);
-            t3_bursts[i] = atoi(argv[3]);
-            t4_bursts[i] = atoi(argv[4]);
-            t5_bursts[i] = atoi(argv[5]);
-            t6_bursts[i] = atoi(argv[6]);
-            t7_bursts[i] = atoi(argv[7]);
-
-            // IO bursts...
-            t1_bursts[i + 3] = atoi(argv[8]);
-            t2_bursts[i + 3] = atoi(argv[9]);
-            t3_bursts[i + 3] = atoi(argv[10]);
-            t4_bursts[i + 3] = atoi(argv[11]);
-            t5_bursts[i + 3] = atoi(argv[12]);
-            t6_bursts[i + 3] = atoi(argv[13]);
-            t7_bursts[i + 3] = atoi(argv[14]);
+            printf("Reading data is completed.\n\n");
+            printf("%d %d %d\n", inputArray[0], inputArray[1], inputArray[2]);
         }
     }
     else {
@@ -277,13 +319,47 @@ int main (int argc, char *argv[]) {
         return 1;
     }
 
-    printf("%d\n", t2_bursts[2]);
+    // PARSING ARGUMENTS COMPLETED...
+
+    printf("T1\tT2\tT3\tT4\tT5\tT6\tT7\n");
 
     initializeThread();
+
+    int i;
+    for (i = createdThreads; i < 4; i++) {
+        int k = i + 1;
+        void *p = &k;
+        int j = createThread(threadFunction, p);
+        if (j == -1) {
+            break;
+        }
+    }
+
+    // Setting alarm for running runThread...
     signal(SIGALRM, runThread);
     alarm(SWITCH_INTERVAL);
     getcontext(&threadArray[0].context);
 
+    while (createdThreads < 7) {
+        int availableSpace = 0;
+        for (i = 1; i < MAX_THREADS; i++) {
+            if (threadArray[i].state == EMPTY) {
+                availableSpace = 1;
+            }
+        }
+        if (availableSpace == 1) {
+            for (i = createdThreads; i < 7; i++) {
+                int k = i + 1;
+                void *p = &k;
+                int j = createThread(threadFunction, p);
+                if (j == -1) {
+                    break;
+                }
+            }
+        }
+    }
+
     while (1);
+
     return 0;
 }
