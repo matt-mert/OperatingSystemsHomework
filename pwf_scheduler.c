@@ -27,12 +27,13 @@ typedef enum {
     EMPTY
 } ThreadState;
 
+// Every thread will do these operations in order CPU1, IO1, CPU2, IO2, CPU3, IO3
 typedef enum {
     CPU1,
-    CPU2,
-    CPU3,
     IO1,
+    CPU2,
     IO2,
+    CPU3,
     IO3
 } CurrentBurst;
 
@@ -58,35 +59,34 @@ volatile int finishedThreads = 0;
 int inputArray[42];
 
 // Ready Queue for the Round Robin Algorithm
-int readyQueue[4];
+int readyQueue[MAX_THREADS - 1];
 
 // This function is the function we makecontext for each thread.
 void threadFunction(void *arg1, void *arg2) {
     unsigned int threadIndex = (uintptr_t) arg1;
     unsigned int arrayIndex = (uintptr_t) arg2;
-    while (1) {
-        if (threadArray[arrayIndex].state == RUNNING) {
+    while (threadArray[arrayIndex].state != FINISHED) {
+        if (threadArray[arrayIndex].state == RUNNING || threadArray[arrayIndex].state == IO) {
             CurrentBurst burst = threadArray[arrayIndex].current;
-            switch (burst)
-            {
-            case CPU1:
-                break;
-            case CPU2:
-                break;
-            case CPU3:
-                break;
-            case IO1:
-                break;
-            case IO2:
-                break;
-            case IO3:
-                break;
-            default:
-                break;
+            int duration = threadArray[arrayIndex].bursts[burst];
+            counterFunction(duration, threadIndex);
+            threadArray[arrayIndex].current++;
+            if (burst < 6) {
+                if (threadArray[arrayIndex].state == RUNNING) {
+                    threadArray[arrayIndex].state = IO;
+                }
+                else if (threadArray[arrayIndex].state == IO) {
+                    threadArray[arrayIndex].state = RUNNING;
+                }
+            }
+            else {
+                threadArray[arrayIndex].state = FINISHED;
             }
         }
     }
-    // counterFunction cagirinca 1 sn delay geliyor
+    
+    finishedThreads++;
+    exitThread(arrayIndex);
 }
 
 // n: cpu burst time, i: thread number
@@ -99,27 +99,32 @@ void counterFunction(int n, int i) {
             printf("\t");
         }
         printf("%d\n", j);
-        usleep(999000); // Sleep for 0.999 seconds
+        usleep(950000); // Sleep for 0.95 seconds
     }
 }
 
 // Pops the first element of ready queue. (Helper Function)
 int popFront() {
-    int temp1 = readyQueue[0];
-    int temp2 = readyQueue[1];
-    int temp3 = readyQueue[2];
-    int temp4 = readyQueue[3];
-    readyQueue[0] = temp2;
-    readyQueue[1] = temp3;
-    readyQueue[2] = temp4;
-    readyQueue[3] = -1;
-    return temp1;
+    int temp[MAX_THREADS - 1];
+    int i;
+    for (i = 0; i < MAX_THREADS -1; i++) {
+        temp[i] = readyQueue[i];
+    }
+    for (i = 0; i < MAX_THREADS - 1; i++) {
+        if (i == MAX_THREADS) {
+            readyQueue[i] = -1;
+            return temp[0];
+        }
+        else {
+            readyQueue[i] = temp[i + 1];
+        }
+    }
 }
 
 // Pushes a new element to the back of ready queue. (Helper Function)
 int pushBack(int val) {
     int i;
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < MAX_THREADS - 1; i++) {
         if (readyQueue[i] == -1) {
             readyQueue[i] = val;
             return i;
@@ -128,7 +133,17 @@ int pushBack(int val) {
     return -1;
 }
 
-// Helper function to print the information regarding the current status of the threads.
+// Prints the current values of the ready queue. (Helper Function)
+void printQueue() {
+    printf("ReadyQueue:");
+    int i;
+    for (i = 0; i < MAX_THREADS - 1; i++) {
+        printf(" %d", readyQueue[i]);
+    }
+    printf("\n");
+}
+
+// Helper function to print the information about the current status of the threads.
 void printerFunction() {
     char running[13];
     char ready[13];
@@ -216,7 +231,6 @@ int createThread(void (*func)(void *, void *), void *arg) {
 
 // Gets called every SWITCH_INTERVAL seconds until all 7 processes are finished.
 void runThread() {
-
     // Setting alarm for re-running runThread if not all threads are finished.
     if (finishedThreads < 7) {
         signal(SIGALRM, runThread);
@@ -227,8 +241,8 @@ void runThread() {
     }
 
     printerFunction();
-
-    // Scheduler cagirilcak
+    
+    pwf_scheduler();
 
     // threadArray[id].state = RUNNING;
     // swapcontext(&mainContext, &threadArray[id].context);
@@ -246,18 +260,22 @@ void exitThread(int index) {
 
 // Implementation of Preemptive and Weighted Fair scheduler with Round Robin Algorithm.
 void pwf_scheduler() {
-    while (1) {
+    // Initializing the readyQueue
+    if (currentThread == 0) {
         int i;
-        for (i = 0; i < MAX_THREADS; i++) {
-            currentThread = (currentThread + 1) % MAX_THREADS;
-            if (threadArray[currentThread].state == READY) {
-                runThread(currentThread);
-                if (threadArray[currentThread].state == FINISHED) {
-                    threadArray[currentThread].state = READY;
-                }
-            }
+        for (i = 0; i < MAX_THREADS - 2; i++) {
+            readyQueue[i] = i + 2;
         }
-        // sleep(3);
+        threadArray[0].state = RUNNING;
+        currentThread = 1;
+        printQueue();
+        return;
+    }
+
+    int arrayIndex = popFront();
+
+    if (currentThread != 0) {
+        pushBack(currentThread);
     }
 
     // int nextIndex = popFront();
