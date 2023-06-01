@@ -77,13 +77,58 @@ int threadStates[NUM_THREADS];
 // Container to put the input data.
 int inputArray[NUM_THREADS * (CPU_BURST_AMOUNT + IO_BURST_AMOUNT)];
 
-// Ready Queue for the Round Robin Algorithm
+// Ready Queue for the SRTF scheduler algorithm
 int readyQueue[MAX_THREADS - 1]; // Stores array indexes of threads.
 int readyStatus[MAX_THREADS]; // Stores the states of each thread.
 
 // *******************************************************************************
-// Helper functions for the Round Robin algorithm implementation
+// Helper functions for the SRTF scheduler algorithm implementation
 // *******************************************************************************
+
+// For SRTF algorithm, since we do not choose the first comer directly. (Helper Function)
+int popSelect(int index) {
+    if (readyQueue[0] == -1) {
+        return -1;
+    }
+    int temp[MAX_THREADS - 1];
+    int i;
+    for (i = 0; i < MAX_THREADS - 1; i++) {
+        temp[i] = readyQueue[i];
+    }
+    for (i = 0; i < MAX_THREADS - 1; i++) {
+        if (i == MAX_THREADS - 2) {
+            readyQueue[i] = -1;
+        }
+        else if (i >= index) {
+            readyQueue[i] = temp[i + 1];
+        }
+    }
+    int value = temp[index];
+    return value;
+}
+
+// For SRTF algorithm, finds thread with shortest burst duration. (Helper Function)
+int findShortest() {
+    if (readyQueue[0] == -1) {
+        return -1;
+    }
+    int i;
+    int shortestIndex = 0;
+    for (i = 0; i < MAX_THREADS - 1; i++) {
+        if (i == 0) { continue; }
+        if (readyQueue[i] == -1) { continue; }
+        int prevIndex = readyQueue[shortestIndex];
+        int thisIndex = readyQueue[i];
+        CurrentBurst prevBurst = threadArray[prevIndex].current;
+        CurrentBurst thisBurst = threadArray[thisIndex].current;
+        int prevRemaining = threadArray[prevIndex].bursts[prevBurst];
+        int thisRemaining = threadArray[thisIndex].bursts[thisBurst];
+        if (thisRemaining < prevRemaining) {
+            shortestIndex = i;
+        }
+    }
+    return shortestIndex;
+}
 
 // Pops the first element of ready queue. (Helper Function)
 int popFront() {
@@ -152,12 +197,11 @@ void printStatus() {
 }
 
 // *******************************************************************************
-// Note that for this scheduling, I will use "Round Robin" scheduling algorithm
-// and not lottery as it was given as a choice in the homework pdf.
+// Shortest Remaining Time First Scheduling Algorithm Implementation
 // *******************************************************************************
 
-// Implementation of PWF Round Robin algorithm.
-int pwf_scheduler() {
+// Implementation of Shortest Remaining Time First algorithm.
+int srtf_scheduler() {
 
     // Initializing the readyQueue
     if (currentArrayIndex == 0) {
@@ -186,18 +230,22 @@ int pwf_scheduler() {
         readyStatus[currentArrayIndex] = 1;
     }
 
-    int arrayIndex = popFront();
-    
-    if (arrayIndex == -1) {
+    int shortestFromQueue = findShortest();
+    int shortestArrayIndex = popSelect(shortestFromQueue);
+
+    if (shortestArrayIndex == -1) {
         return -1;
     }
 
-    threadArray[arrayIndex].state = RUNNING;
-    int threadIndex = threadArray[arrayIndex].threadIndex;
+    int shortestThreadIndex = threadArray[shortestArrayIndex].threadIndex;
+    printf("\nThread with the shortest remaining burst time is selected as: T%d\n", shortestThreadIndex);
+    
+    threadArray[shortestArrayIndex].state = RUNNING;
+    int threadIndex = threadArray[shortestArrayIndex].threadIndex;
     threadStates[threadIndex - 1] = RUNNING;
-    currentArrayIndex = arrayIndex;
-    readyStatus[arrayIndex] = 0;
-    return arrayIndex;
+    currentArrayIndex = shortestArrayIndex;
+    readyStatus[shortestArrayIndex] = 0;
+    return shortestArrayIndex;
 }
 
 // We have enough IO devices to do all IO simultaneously, therefore,
@@ -367,7 +415,7 @@ void runThread() {
         return;
     }
 
-    int index = pwf_scheduler();
+    int index = srtf_scheduler();
     printQueue();
     // printStatus();
     printerFunction();
@@ -432,7 +480,7 @@ void threadFunction(int arrayIndex) {
 // In this program, we only parse the arguments and create user-level threads in main().
 int main (int argc, char *argv[]) {
     printf("EE442 Programming Assignment 2 Salih Mert Kucukakinci 2094290\n");
-    printf("Scheduling Algorithm Selected: Round Robin Algorithm\n\n");
+    printf("Scheduler 2: Shortest Remaining Time First Algorithm.\n\n");
     printf("Usage       : ./pwf_scheduler /path/to/your/input.txt\n");
     printf("Input Format: [T1] [t1_cpu1] [t1_io1] [t1_cpu2] [t1_io2] ...\n");
     printf("              [T2] [t2_cpu1] [t2_io1] [t2_cpu2] [t2_io2] ...\n");

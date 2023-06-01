@@ -10,15 +10,19 @@ Run with the following command:
 
 $ ./pwf_scheduler input.txt
 
+$ ./srtf_scheduler input.txt
+
 ```
 
 
-or with the following command:
+or you can explicitly specify the path to the input file:
 
 
 ```bash
 
 $ ./pwf_scheduler path/to/input.txt
+
+$ ./srtf_scheduler path/to/input.txt
 
 ```
 
@@ -43,7 +47,12 @@ T7 3 2 3 1 1 1
 X
 
 
-In this format, first string is label, the next 3 integers are cpu1, cpu2, cpu3 durations and the last 3 integers are io1, io2, io3 durations for the corresponding process and X stops reading.
+Format: [T1] [t1_cpu1] [t1_io1] [t1_cpu2] [t1_io2]
+        [T2] [t2_cpu1] [t2_io1] [t2_cpu2] [t2_io2]
+         X
+
+
+X indicates the end of the file.
 
 
 To create the runnable:
@@ -53,7 +62,9 @@ To create the runnable:
 
 $ gcc -o pwf_scheduler pwf_scheduler.c
 
+$ gcc -o srtf_scheduler srtf_scheduler.c
+
 ```
 
-https://github.com/matt-mert
+Author: https://github.com/matt-mert
 
